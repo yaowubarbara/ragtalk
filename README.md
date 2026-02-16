@@ -33,13 +33,53 @@ A full-stack RAG (Retrieval-Augmented Generation) application that lets you have
                                      └──────────────┘
 ```
 
-**How RAG works in this app:**
-1. User sends a message to a persona
-2. The message is embedded and searched against that persona's ChromaDB collection
-3. Top-K most relevant quotes/writings are retrieved (cosine similarity)
-4. Retrieved context is injected into the system prompt as "Reference Materials"
-5. The LLM generates a response grounded in real source material
-6. Response streams token-by-token via Server-Sent Events
+### Advanced RAG Pipeline
+
+```
+User Query
+    │
+    ▼
+┌──────────────────┐
+│  Query Rewriter   │  LLM rewrites conversational query → retrieval-optimized form
+│  + HyDE           │  Generates hypothetical answer for better embedding match
+└────────┬─────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+┌────────┐ ┌────────┐
+│  BM25  │ │ChromaDB│  Sparse (keyword) + Dense (embedding) retrieval
+│ Sparse │ │ Dense  │
+└───┬────┘ └───┬────┘
+    │          │
+    ▼          ▼
+┌──────────────────┐
+│   RRF Fusion     │  Reciprocal Rank Fusion merges both ranked lists
+│  (k=60)          │  without score normalization
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Cross-Encoder   │  Reranks top-20 candidates → top-5
+│  Reranker        │  Local model or LLM-as-judge fallback
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Context Builder  │  Numbered citations [1], [2]... with source metadata
+│ + Citation IDs   │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  LLM Generation  │  Streams response with inline [N] citations
+│  (SSE Stream)    │  Sources metadata sent at end of stream
+└──────────────────┘
+```
+
+Each pipeline stage is **independently toggleable** via environment config:
+- `ENABLE_QUERY_REWRITE=true/false`
+- `ENABLE_HYBRID_SEARCH=true/false`
+- `ENABLE_RERANKER=true/false`
 
 ## Tech Stack
 
@@ -48,20 +88,26 @@ A full-stack RAG (Retrieval-Augmented Generation) application that lets you have
 | Frontend | Next.js 16, React 19, TypeScript 5 | UI with real-time SSE streaming |
 | Styling | Tailwind CSS 4 | Dark theme, glass morphism, per-persona theming |
 | Backend | FastAPI, Uvicorn | Async API with SSE streaming |
-| Vector DB | ChromaDB | Persistent semantic search with cosine similarity |
-| LLM | OpenRouter API (Llama 3.1 8B default) | Response generation |
+| Vector DB | ChromaDB | Dense retrieval with cosine similarity |
+| Keyword Search | rank-bm25 | Sparse retrieval for exact keyword matching |
+| Reranker | Cross-encoder / LLM-as-judge | Fine-grained relevance scoring |
+| LLM | OpenRouter API (Llama 3.1 8B default) | Generation, query rewriting, reranking |
 | Scraping | BeautifulSoup4, PyPDF, httpx | Data collection from primary sources |
 
 ## Features
 
+- **Hybrid Search** - BM25 keyword + embedding dense retrieval fused via Reciprocal Rank Fusion
+- **Cross-Encoder Reranking** - local model (sentence-transformers) with LLM-as-judge fallback
+- **Query Rewriting + HyDE** - LLM optimizes queries for retrieval; Hypothetical Document Embeddings for semantic matching
+- **Citation System** - numbered `[1]` `[2]` inline references with clickable source badges
+- **RAG Evaluation** - LLM-as-Judge pipeline scoring context relevance, faithfulness, and answer relevancy
+- **Semantic Chunking** - paragraph-aware splitting with sentence overlap (not naive fixed-size)
 - **6 unique AI personas** with distinct personalities, system prompts, and visual themes
-- **RAG-grounded responses** - every answer backed by real quotes and writings
 - **Real-time streaming** - token-by-token SSE for responsive conversation
-- **Per-persona chat backgrounds** - unique high-tech animated backgrounds (circuit boards, constellations, network meshes, stock charts, etc.)
-- **CSS art avatars** - SVG icon avatars with persona-colored gradients (no external images)
-- **Dark mode UI** - Silicon Valley aesthetic with glass morphism and animated gradients
+- **Per-persona themed UI** - unique animated backgrounds, CSS art avatars, glass morphism
 - **Full conversation memory** - history passed to maintain multi-turn context
 - **Data pipeline** - automated scraping, cleaning, chunking, and vector ingestion
+- **Feature flags** - each pipeline stage independently toggleable
 
 ## Data Sources
 
@@ -145,6 +191,24 @@ data: {"token": " are"}
 data: [DONE]
 ```
 
+## RAG Evaluation
+
+Built-in evaluation pipeline using LLM-as-Judge to measure retrieval and generation quality:
+
+```bash
+make evaluate                           # Evaluate all personas
+cd backend && python3 -m evaluation.evaluate --persona charlie-munger --verbose
+```
+
+Scores three dimensions per query:
+| Metric | What it measures |
+|--------|-----------------|
+| **Context Relevance** | Are the retrieved documents relevant to the query? |
+| **Faithfulness** | Is the answer grounded in the retrieved context (not hallucinated)? |
+| **Answer Relevancy** | Does the answer actually address the user's question? |
+
+Results are saved to `backend/evaluation/results.json` for tracking over time.
+
 ## Project Structure
 
 ```
@@ -193,6 +257,7 @@ data: [DONE]
 | `make data` | Scrape + ingest (full pipeline) |
 | `make backend` | Start FastAPI dev server |
 | `make frontend` | Start Next.js dev server |
+| `make evaluate` | Run RAG evaluation (LLM-as-Judge) |
 
 ---
 
@@ -219,13 +284,15 @@ data: [DONE]
                                      └──────────────┘
 ```
 
-**RAG 工作流程：**
-1. 用户向某个人物发送消息
-2. 消息被向量化并在该人物的 ChromaDB 集合中进行语义搜索
-3. 检索出最相关的 Top-K 条引言/著作（余弦相似度）
-4. 检索到的上下文作为"参考资料"注入系统提示词
-5. 大语言模型基于真实原始资料生成回复
-6. 回复通过 Server-Sent Events 逐 token 流式传输
+**高级 RAG 流水线：**
+1. **Query Rewriting** — LLM 将口语化问题改写为检索优化的查询，支持 HyDE（假设文档嵌入）
+2. **混合检索** — BM25 关键词搜索 + ChromaDB 向量搜索并行执行
+3. **RRF 融合** — 使用 Reciprocal Rank Fusion 合并两路检索结果（无需分数归一化）
+4. **Cross-Encoder 重排序** — 对 Top-20 候选文档精排，输出 Top-5（本地模型优先，LLM 兜底）
+5. **引用标注** — 上下文注入编号 `[1]` `[2]`，LLM 生成时自然引用
+6. **流式生成** — 逐 token SSE 推送 + 流末尾发送引用源元数据
+
+每个阶段可通过环境变量独立开关：`ENABLE_QUERY_REWRITE`、`ENABLE_HYBRID_SEARCH`、`ENABLE_RERANKER`
 
 ## 技术栈
 
@@ -234,20 +301,26 @@ data: [DONE]
 | 前端 | Next.js 16、React 19、TypeScript 5 | 界面与实时 SSE 流式传输 |
 | 样式 | Tailwind CSS 4 | 暗色主题、毛玻璃效果、人物主题定制 |
 | 后端 | FastAPI、Uvicorn | 异步 API 与 SSE 流式传输 |
-| 向量库 | ChromaDB | 持久化语义搜索（余弦相似度） |
-| 大模型 | OpenRouter API（默认 Llama 3.1 8B） | 回复生成 |
+| 向量库 | ChromaDB | 稠密检索（余弦相似度） |
+| 关键词搜索 | rank-bm25 | 稀疏检索（精确关键词匹配） |
+| 重排序 | Cross-encoder / LLM-as-judge | 细粒度相关性评分 |
+| 大模型 | OpenRouter API（默认 Llama 3.1 8B） | 生成、查询改写、重排序 |
 | 数据采集 | BeautifulSoup4、PyPDF、httpx | 从原始来源采集数据 |
 
 ## 功能特性
 
+- **混合检索** — BM25 关键词 + 向量稠密检索，RRF 融合排序
+- **Cross-Encoder 重排序** — 本地模型优先（sentence-transformers），LLM-as-judge 兜底
+- **Query Rewriting + HyDE** — LLM 优化查询；假设文档嵌入提升语义匹配
+- **引用系统** — 行内 `[1]` `[2]` 编号引用，可点击查看原始来源
+- **RAG 评估** — LLM-as-Judge 流水线，评分上下文相关性、忠实度、回答相关性
+- **语义分块** — 段落感知切分 + 句子重叠（非固定字符数硬切）
 - **6 个独特 AI 人物** — 各有独立性格、系统提示词和视觉主题
-- **RAG 增强回复** — 每个回答都有真实引言和著作支撑
 - **实时流式传输** — 逐 token SSE 推送，对话响应即时
-- **人物专属聊天背景** — 独特的高科技动画背景（电路板、星座、网络拓扑、股票图表等）
-- **CSS 艺术头像** — SVG 图标头像配合人物专属渐变色（无外部图片）
-- **暗色模式 UI** — 硅谷风格美学，毛玻璃效果与动画渐变
+- **人物专属主题 UI** — 独特动画背景、CSS 艺术头像、毛玻璃效果
 - **完整对话记忆** — 传递历史记录以维持多轮对话上下文
 - **数据管线** — 自动化抓取、清洗、分块与向量化入库
+- **功能开关** — 每个流水线阶段可独立启停
 
 ## 数据来源
 
@@ -323,3 +396,4 @@ make frontend   # Next.js 运行在 http://localhost:3000
 | `make data` | 抓取 + 导入（完整管线） |
 | `make backend` | 启动 FastAPI 开发服务器 |
 | `make frontend` | 启动 Next.js 开发服务器 |
+| `make evaluate` | 运行 RAG 评估（LLM-as-Judge） |
