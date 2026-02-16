@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { ChatMessage } from "@/types";
+import { ChatMessage, Citation } from "@/types";
 import { streamChat } from "@/lib/api";
 
 export function useChat(personaId: string) {
@@ -51,6 +51,18 @@ export function useChat(personaId: string) {
         (err) => {
           setError(err);
           setIsStreaming(false);
+        },
+        // onSources
+        (sources: Citation[]) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            updated[updated.length - 1] = {
+              ...last,
+              sources,
+            };
+            return updated;
+          });
         }
       );
     },

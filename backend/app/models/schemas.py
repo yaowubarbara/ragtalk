@@ -12,6 +12,13 @@ class ChatRequest(BaseModel):
     conversation_history: list[ChatMessage] = []
 
 
+class Citation(BaseModel):
+    id: int
+    source: str
+    doc_type: str
+    text: str
+
+
 class PersonaResponse(BaseModel):
     id: str
     name: str

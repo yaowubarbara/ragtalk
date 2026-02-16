@@ -7,7 +7,15 @@ export interface Persona {
   greeting: string;
 }
 
+export interface Citation {
+  id: number;
+  source: string;
+  doc_type: string;
+  text: string;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  sources?: Citation[];
 }

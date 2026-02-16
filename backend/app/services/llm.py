@@ -34,3 +34,22 @@ async def stream_chat_completion(
     async for chunk in stream:
         if chunk.choices and chunk.choices[0].delta.content:
             yield chunk.choices[0].delta.content
+
+
+async def chat_completion(
+    messages: list[dict],
+    model: str | None = None,
+    temperature: float = 0.0,
+    max_tokens: int = 256,
+) -> str:
+    """Non-streaming completion for query rewriting, reranking, evaluation, etc."""
+    settings = get_settings()
+    client = get_llm_client()
+    response = await client.chat.completions.create(
+        model=model or settings.llm_model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=False,
+    )
+    return response.choices[0].message.content or ""

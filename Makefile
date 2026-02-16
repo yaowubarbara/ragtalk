@@ -1,4 +1,4 @@
-.PHONY: backend frontend scrape ingest setup dev
+.PHONY: backend frontend scrape ingest setup dev evaluate
 
 # Install all dependencies
 setup:
@@ -23,6 +23,10 @@ backend:
 # Run frontend development server
 frontend:
 	cd frontend && npm run dev
+
+# Evaluate RAG pipeline quality (LLM-as-Judge)
+evaluate:
+	cd backend && python3 -m evaluation.evaluate
 
 # Run both backend and frontend (use two terminals, or run this in background)
 dev:

@@ -1,4 +1,4 @@
-import { Persona, ChatMessage } from "@/types";
+import { Persona, ChatMessage, Citation } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -15,7 +15,8 @@ export async function streamChat(
   conversationHistory: ChatMessage[],
   onToken: (token: string) => void,
   onDone: () => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  onSources?: (sources: Citation[]) => void
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/chat`, {
     method: "POST",
@@ -67,6 +68,9 @@ export async function streamChat(
         }
         if (parsed.token) {
           onToken(parsed.token);
+        }
+        if (parsed.type === "sources" && parsed.sources && onSources) {
+          onSources(parsed.sources);
         }
       } catch {
         // Skip malformed lines

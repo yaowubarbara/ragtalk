@@ -16,13 +16,19 @@ async def chat(request: ChatRequest):
 
     async def event_stream():
         try:
-            async for token in generate_response(
+            async for item in generate_response(
                 persona_id=request.persona_id,
                 user_message=request.message,
                 conversation_history=request.conversation_history,
             ):
-                data = json.dumps({"token": token})
-                yield f"data: {data}\n\n"
+                if isinstance(item, dict):
+                    # Sources metadata at the end of the stream
+                    data = json.dumps(item)
+                    yield f"data: {data}\n\n"
+                else:
+                    # Regular text token
+                    data = json.dumps({"token": item})
+                    yield f"data: {data}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
             error_data = json.dumps({"error": str(e)})
